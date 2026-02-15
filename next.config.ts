@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  turbopack: {
+    root: '.',
+  },
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.transloadit.com' },
+      { protocol: 'https', hostname: '**.clerk.dev' },
+    ],
+  },
 };
 
 export default nextConfig;
