@@ -1,26 +1,109 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card-bg: #141414;
+  --card-border: #222222;
+  --accent-purple: #8b5cf6;
+  --accent-purple-hover: #7c3aed;
+  --text-muted: #a0a0a0;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* React Flow Overrides */
+.react-flow__background {
+  background-color: #0a0a0a !important;
+}
+
+.react-flow__minimap {
+  background-color: #141414 !important;
+  border: 1px solid #222222 !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__controls {
+  background-color: #141414 !important;
+  border: 1px solid #222222 !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__controls-button {
+  background-color: #141414 !important;
+  border-color: #222222 !important;
+  color: #a0a0a0 !important;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #1a1a1a !important;
+}
+
+.react-flow__edge-path {
+  stroke: #8b5cf6;
+  stroke-width: 2;
+}
+
+/* Pulsating glow for executing nodes */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px 2px rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 6px rgba(139, 92, 246, 0.8);
+  }
+}
+
+.node-executing {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Node handle styling */
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 2px solid #8b5cf6 !important;
+  background: #141414 !important;
+}
+
+.react-flow__handle:hover {
+  background: #8b5cf6 !important;
+}
+
+.react-flow__handle-connecting {
+  background: #8b5cf6 !important;
+}
+
+.react-flow__handle-valid {
+  background: #22c55e !important;
+  border-color: #22c55e !important;
 }

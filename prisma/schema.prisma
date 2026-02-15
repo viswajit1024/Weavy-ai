@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String        @id @default(cuid())
+  clerkId   String        @unique
+  email     String        @default("")
+  name      String?
+  imageUrl  String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  workflows Workflow[]
+  runs      WorkflowRun[]
+  apiKeys   UserApiKey[]
+}
+
+model Workflow {
+  id          String        @id @default(cuid())
+  name        String        @default("Untitled Workflow")
+  description String?
+  nodes       Json          @default("[]")
+  edges       Json          @default("[]")
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs        WorkflowRun[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([userId])
+}
+
+model WorkflowRun {
+  id          String    @id @default(cuid())
+  workflowId  String
+  workflow    Workflow   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      String    @default("running")
+  scope       String    @default("full")
+  nodeResults Json      @default("[]")
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int?
+
+  @@index([workflowId])
+  @@index([userId])
+}
+
+model UserApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String   // "gemini", "transloadit", "trigger"
+  apiKey    String   // encrypted in practice; stored as-is for MVP
+  label     String?  // user-friendly label
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
