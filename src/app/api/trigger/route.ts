@@ -4,6 +4,7 @@ import { tasks, runs } from '@trigger.dev/sdk/v3';
 import { checkRateLimit, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 import { validateImageUrl, validateVideoUrl } from '@/lib/ssrf-protection';
 import { getApiKey } from '@/lib/api-keys';
+import { triggerTaskSchema, parseBody } from '@/lib/validations';
 
 // POST /api/trigger - trigger a specific task
 export async function POST(req: NextRequest) {
@@ -24,11 +25,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { taskType, payload } = body;
-
-    if (!taskType || !payload) {
-      return NextResponse.json({ error: 'taskType and payload required' }, { status: 400 });
+    const parsed = parseBody(triggerTaskSchema, body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { taskType, payload } = parsed.data;
 
     // SSRF protection: validate image/video URLs in payload
     try {

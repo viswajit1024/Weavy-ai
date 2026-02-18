@@ -1,19 +1,22 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type DragEvent } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   ConnectionMode,
   BackgroundVariant,
+  useReactFlow,
   type Connection,
   type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useWorkflowStore } from '@/stores/workflowStore';
-import { validateConnection } from '@/lib/utils';
+import { validateConnection, generateNodeId } from '@/lib/utils';
+import type { NodeType } from '@/types/workflow.types';
 import TextNode from '@/components/nodes/TextNode';
 import UploadImageNode from '@/components/nodes/UploadImageNode';
 import UploadVideoNode from '@/components/nodes/UploadVideoNode';
@@ -22,6 +25,14 @@ import CropImageNode from '@/components/nodes/CropImageNode';
 import ExtractFrameNode from '@/components/nodes/ExtractFrameNode';
 
 export default function WorkflowCanvas() {
+  return (
+    <ReactFlowProvider>
+      <WorkflowCanvasInner />
+    </ReactFlowProvider>
+  );
+}
+
+function WorkflowCanvasInner() {
   const {
     nodes,
     edges,
@@ -29,6 +40,35 @@ export default function WorkflowCanvas() {
     onEdgesChange,
     onConnect,
   } = useWorkflowStore();
+
+  const { screenToFlowPosition } = useReactFlow();
+
+  // Handle drag-and-drop from sidebar
+  const onDragOver = useCallback((event: DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow') as NodeType;
+      if (!type) return;
+
+      // Convert screen coords to flow coords
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const id = generateNodeId();
+      const newNode = { id, type, position, data: {} };
+
+      useWorkflowStore.getState().setNodes([...useWorkflowStore.getState().nodes, newNode]);
+    },
+    [screenToFlowPosition]
+  );
 
   // Define custom node types
   const nodeTypes = useMemo(
@@ -93,6 +133,8 @@ export default function WorkflowCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         isValidConnection={isValidConnection}
         connectionMode={ConnectionMode.Strict}

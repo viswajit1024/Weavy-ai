@@ -2,6 +2,8 @@ import { auth, currentUser } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
+import { createWorkflowSchema, updateWorkflowSchema, parseBody } from '@/lib/validations';
+import type { Prisma } from '@prisma/client';
 
 // GET /api/workflows - list all workflows for the user
 // GET /api/workflows?id=xxx - get single workflow
@@ -77,13 +79,17 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, nodes, edges } = body;
+    const parsed = parseBody(createWorkflowSchema, body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+    const { name, nodes, edges } = parsed.data;
 
     const workflow = await prisma.workflow.create({
       data: {
         name: name || 'Untitled Workflow',
-        nodes: nodes || [],
-        edges: edges || [],
+        nodes: (nodes || []) as unknown as Prisma.InputJsonValue,
+        edges: (edges || []) as unknown as Prisma.InputJsonValue,
         userId: user.id,
       },
     });
@@ -109,11 +115,11 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, name, nodes, edges } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: 'Workflow ID required' }, { status: 400 });
+    const parsed = parseBody(updateWorkflowSchema, body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { id, name, nodes, edges } = parsed.data;
 
     // Verify ownership
     const existing = await prisma.workflow.findFirst({
@@ -127,8 +133,8 @@ export async function PUT(req: NextRequest) {
       where: { id },
       data: {
         ...(name !== undefined && { name }),
-        ...(nodes !== undefined && { nodes }),
-        ...(edges !== undefined && { edges }),
+        ...(nodes !== undefined && { nodes: nodes as unknown as Prisma.InputJsonValue }),
+        ...(edges !== undefined && { edges: edges as unknown as Prisma.InputJsonValue }),
       },
     });
 

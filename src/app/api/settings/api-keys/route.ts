@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
+import { upsertApiKeySchema, parseBody } from '@/lib/validations';
 
 // GET /api/settings/api-keys - list user's API keys (masked)
 export async function GET() {
@@ -65,11 +66,12 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { provider, apiKey, label } = body;
-
-    if (!provider || !apiKey) {
-      return NextResponse.json({ error: 'Provider and apiKey are required' }, { status: 400 });
+    const parsed = parseBody(upsertApiKeySchema, body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { provider, apiKey } = parsed.data;
+    const label = (body as Record<string, unknown>).label as string | undefined;
 
     const validProviders = ['gemini', 'transloadit', 'trigger'];
     if (!validProviders.includes(provider)) {

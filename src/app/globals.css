@@ -1,28 +1,125 @@
 @import "tailwindcss";
 
+/* ============================================
+   Weavy.ai Design Tokens (from real site CSS)
+   ============================================ */
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --card-bg: #141414;
-  --card-border: #222222;
-  --accent-purple: #8b5cf6;
-  --accent-purple-hover: #7c3aed;
-  --text-muted: #a0a0a0;
+  /* Brand Colors */
+  --transparent-surface: #fff0;
+  --brand--lemon-100: #f7ffa8;
+  --brand--rich-black: #252525;
+  --brand--base--white: white;
+  --brand--lemon: #f7ff9e;
+  --brand--azure: azure;
+  --brand--ash-grey: #aeb3a9;
+  --brand--base--black: black;
+  --brand--richer-black: #212126;
+  --brand--eggshell: #eaeada;
+  --brand--base--surface--grey-300: #f5f5f6;
+  --brand--base--surface--grey-400: #ececec;
+  --border--soft-grey-200: #d0d0d2;
+  --brand--spring-wood: #f7f7f0;
+  --brand--moon-mist: #dcdcc2;
+  --pink-lavender: #cc9de4;
+  --stone-grey: #656568;
+  --brand--french-gray: #c1cdd5;
+  --brand--french-gray-op-45: #c1ced573;
+  --brand--white-op-30: #ffffff4d;
+
+  /* Nav Link Sizes */
+  --brand--base--nav-link-text-size-small: 0.975rem;
+  --brand--base--nav-link-text-size-large: 2.77778rem;
+
+  /* App Tokens (mapped for Tailwind) */
+  --background: #fff;
+  --foreground: #333;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Global font smoothing (matches weavy.ai) */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Lenis smooth scroll */
+html.lenis {
+  height: auto !important;
+}
+
+html, body {
+  overscroll-behavior-y: none;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-sans), 'DM Sans', Arial, sans-serif;
+  font-weight: 400;
+  line-height: 20px;
+  min-height: 100%;
+  margin: 0;
 }
 
-/* React Flow Overrides */
+/* Landing page responsive base sizing (matches weavy.ai 1vw convention) */
+.landing-page {
+  font-size: 1vw;
+}
+
+@media screen and (min-width: 1440px) {
+  .landing-page {
+    font-size: 14.4px;
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .landing-page {
+    font-size: 6px;
+  }
+}
+
+::selection {
+  background-color: var(--brand--lemon);
+  color: var(--brand--rich-black);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c4c4c4;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ============================================
+   React Flow Overrides (Workflow Editor pages)
+   ============================================ */
 .react-flow__background {
   background-color: #0a0a0a !important;
 }
@@ -66,25 +163,6 @@ body {
 
 .node-executing {
   animation: pulse-glow 1.5s ease-in-out infinite;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
 }
 
 /* Node handle styling */

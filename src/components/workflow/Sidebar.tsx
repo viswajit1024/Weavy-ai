@@ -2,7 +2,7 @@
 
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { Type, ImageIcon, Video, Brain, Crop, Film, Search, ChevronLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { NodeType } from '@/types/workflow.types';
 
 const NODE_TYPES: {
@@ -58,6 +58,14 @@ const NODE_TYPES: {
 
 export default function Sidebar() {
   const addNode = useWorkflowStore((s) => s.addNode);
+
+  const onDragStart = useCallback(
+    (event: React.DragEvent, nodeType: NodeType) => {
+      event.dataTransfer.setData('application/reactflow', nodeType);
+      event.dataTransfer.effectAllowed = 'move';
+    },
+    []
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsed, setCollapsed] = useState(false);
 
@@ -133,7 +141,9 @@ export default function Sidebar() {
               <button
                 key={nodeType.type}
                 onClick={() => addNode(nodeType.type)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#141414] transition-colors text-left group"
+                draggable
+                onDragStart={(e) => onDragStart(e, nodeType.type)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#141414] transition-colors text-left group cursor-grab active:cursor-grabbing"
               >
                 <div
                   className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${nodeType.color}`}

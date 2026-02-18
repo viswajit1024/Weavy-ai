@@ -1,16 +1,22 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { DM_Sans, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const inter = Inter({
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-dm-sans",
+  weight: ["400", "500", "600", "700"],
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
 });
 
 export const metadata: Metadata = {
-  title: "Weavy AI - LLM Workflow Builder",
-  description: "Build powerful AI workflows with visual programming",
+  title: "Weavy | AI-Powered Design Workflows, Built for Creative Pros",
+  description: "Transform your creative vision into scalable workflows with Weavy. Integrate AI models and editing tools in one seamless, node-based platform.",
 };
 
 export default function RootLayout({
@@ -19,19 +25,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider
-      appearance={{
-        variables: {
-          colorPrimary: '#8b5cf6',
-          colorBackground: '#141414',
-          colorInputBackground: '#0a0a0a',
-          colorText: '#ffffff',
-          colorTextSecondary: '#a0a0a0',
-        },
-      }}
-    >
-      <html lang="en" className="dark">
-        <body className={`${inter.variable} font-sans antialiased bg-[#0a0a0a] text-white`}>
+    <ClerkProvider>
+      <html lang="en">
+        <body suppressHydrationWarning className={`${dmSans.variable} ${geistMono.variable} font-sans antialiased`}>
           {children}
         </body>
       </html>

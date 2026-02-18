@@ -1,9 +1,10 @@
 import { auth } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getExecutionOrder, isValidDAG } from '@/lib/utils';
+import { getExecutionOrder, getExecutionLevels, isValidDAG } from '@/lib/utils';
 import { checkRateLimit, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 import type { Prisma } from '@prisma/client';
+import { executeWorkflowSchema, parseBody } from '@/lib/validations';
 
 // POST /api/execute - start a full workflow execution
 export async function POST(req: NextRequest) {
@@ -29,24 +30,31 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { workflowId, nodes, edges } = body;
-
-    if (!nodes || !edges) {
-      return NextResponse.json({ error: 'Nodes and edges required' }, { status: 400 });
+    const parsed = parseBody(executeWorkflowSchema, body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { workflowId, nodes: rawNodes, edges: rawEdges } = parsed.data;
+    // Cast to the shapes our helpers expect
+    const nodes = rawNodes as unknown as { id: string; type: string; data: Record<string, unknown> }[];
+    const edges = rawEdges as unknown as { source: string; target: string; sourceHandle?: string; targetHandle?: string }[];
 
     // Validate DAG
     if (!isValidDAG(nodes, edges)) {
       return NextResponse.json({ error: 'Workflow contains cycles — not a valid DAG' }, { status: 400 });
     }
 
-    // Get execution order
+    // Get execution order (flat, kept for reference) and parallel levels
     const executionOrder = getExecutionOrder(nodes, edges);
+    void executionOrder; // kept for logging / future use
+
+    // Group nodes by topological level for parallel execution
+    const levels = getExecutionLevels(nodes, edges);
 
     // Create a workflow run record
     const run = await prisma.workflowRun.create({
       data: {
-        workflowId: workflowId || undefined,
+        workflowId: workflowId || 'inline',
         userId: user.id,
         status: 'running',
         scope: 'full',
@@ -55,8 +63,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Execute nodes in topological order
-    // For now we do a sequential execution with API calls (Trigger.dev tasks)
+    // Execute nodes level-by-level; nodes within the same level run in parallel
     const nodeResults: Record<string, {
       nodeId: string;
       nodeType: string;
@@ -67,140 +74,145 @@ export async function POST(req: NextRequest) {
       completedAt?: string;
     }> = {};
 
-    const nodeMap = new Map(nodes.map((n: { id: string }) => [n.id, n]));
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
     let failed = false;
 
-    for (const nodeId of executionOrder) {
+    for (const level of levels) {
       if (failed) break;
 
-      const node = nodeMap.get(nodeId) as { id: string; type: string; data: Record<string, unknown> } | undefined;
-      if (!node) continue;
+      // Execute all nodes in this level concurrently
+      const results = await Promise.all(
+        level.map(async (nodeId) => {
+          if (failed) return;
 
-      const startTime = new Date().toISOString();
-      nodeResults[nodeId] = {
-        nodeId,
-        nodeType: node.type,
-        status: 'running',
-        startedAt: startTime,
-      };
+          const node = nodeMap.get(nodeId);
+          if (!node) return;
 
-      try {
-        // Gather inputs from connected source nodes
-        const incomingEdges = edges.filter((e: { target: string }) => e.target === nodeId);
-        const inputData: Record<string, unknown> = {};
+          const startTime = new Date().toISOString();
+          nodeResults[nodeId] = {
+            nodeId,
+            nodeType: node.type,
+            status: 'running',
+            startedAt: startTime,
+          };
 
-        for (const edge of incomingEdges) {
-          const sourceResult = nodeResults[edge.source as string];
-          if (sourceResult?.output) {
-            inputData[edge.targetHandle as string] = sourceResult.output;
-          }
-        }
+          try {
+            // Gather inputs from connected source nodes
+            const incomingEdges = edges.filter((e) => e.target === nodeId);
+            const inputData: Record<string, unknown> = {};
 
-        let output: unknown = null;
+            for (const edge of incomingEdges) {
+              const sourceResult = nodeResults[edge.source];
+              if (sourceResult?.output) {
+                inputData[edge.targetHandle || 'input'] = sourceResult.output;
+              }
+            }
 
-        switch (node.type) {
-          case 'text':
-            // Text nodes just pass through their text
-            output = { text: node.data.text || '' };
-            break;
+            let output: unknown = null;
 
-          case 'uploadImage':
-            // Image nodes pass through their images
-            output = { images: node.data.images || [] };
-            break;
+            switch (node.type) {
+              case 'text':
+                output = { text: node.data.text || '' };
+                break;
 
-          case 'uploadVideo':
-            // Video nodes pass through their video url
-            output = { videoUrl: node.data.videoUrl || '' };
-            break;
+              case 'uploadImage':
+                output = { images: node.data.images || [] };
+                break;
 
-          case 'llm': {
-            // Trigger LLM task
-            const llmPayload = {
-              model: node.data.model || 'gemini-1.5-flash',
-              systemPrompt: (inputData.system_prompt as { text?: string })?.text || '',
-              userMessage: (inputData.user_message as { text?: string })?.text || '',
-              images: (inputData.images as { images?: { imageUrl: string }[] })?.images?.map((i: { imageUrl: string }) => i.imageUrl) || [],
+              case 'uploadVideo':
+                output = { videoUrl: node.data.videoUrl || '' };
+                break;
+
+              case 'llm': {
+                const llmPayload = {
+                  model: node.data.model || 'gemini-1.5-flash',
+                  systemPrompt: (inputData.system_prompt as { text?: string })?.text || '',
+                  userMessage: (inputData.user_message as { text?: string })?.text || '',
+                  images: (inputData.images as { images?: { imageUrl: string }[] })?.images?.map((i: { imageUrl: string }) => i.imageUrl) || [],
+                };
+
+                const llmRes = await fetch(`${getBaseUrl(req)}/api/trigger`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ taskType: 'llm', payload: llmPayload }),
+                });
+
+                const llmResult = await llmRes.json();
+                if (!llmResult.success) throw new Error(llmResult.error);
+
+                output = await pollTriggerTask(req, llmResult.runId);
+                break;
+              }
+
+              case 'cropImage': {
+                const imageInput = inputData.image_url as { images?: { imageUrl: string }[]; outputImageUrl?: string } | undefined;
+                const imageUrl = imageInput?.outputImageUrl || imageInput?.images?.[0]?.imageUrl;
+
+                const cropPayload = {
+                  imageUrl: imageUrl || '',
+                  x: (inputData.x_percent as { text?: string })?.text ?? node.data.x ?? 0,
+                  y: (inputData.y_percent as { text?: string })?.text ?? node.data.y ?? 0,
+                  width: (inputData.width_percent as { text?: string })?.text ?? node.data.width ?? 100,
+                  height: (inputData.height_percent as { text?: string })?.text ?? node.data.height ?? 100,
+                };
+
+                const cropRes = await fetch(`${getBaseUrl(req)}/api/trigger`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ taskType: 'crop-image', payload: cropPayload }),
+                });
+
+                const cropResult = await cropRes.json();
+                if (!cropResult.success) throw new Error(cropResult.error);
+
+                output = await pollTriggerTask(req, cropResult.runId);
+                break;
+              }
+
+              case 'extractFrame': {
+                const videoInput = inputData.video_url as { videoUrl?: string } | undefined;
+                const extractPayload = {
+                  videoUrl: videoInput?.videoUrl || '',
+                  timestamp: (inputData.timestamp as { text?: string })?.text ?? node.data.timestamp ?? 0,
+                };
+
+                const extractRes = await fetch(`${getBaseUrl(req)}/api/trigger`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ taskType: 'extract-frame', payload: extractPayload }),
+                });
+
+                const extractResult = await extractRes.json();
+                if (!extractResult.success) throw new Error(extractResult.error);
+
+                output = await pollTriggerTask(req, extractResult.runId);
+                break;
+              }
+
+              default:
+                output = { text: `Unknown node type: ${node.type}` };
+            }
+
+            nodeResults[nodeId] = {
+              ...nodeResults[nodeId],
+              status: 'completed',
+              output,
+              completedAt: new Date().toISOString(),
             };
-
-            const llmRes = await fetch(`${getBaseUrl(req)}/api/trigger`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ taskType: 'llm', payload: llmPayload }),
-            });
-
-            const llmResult = await llmRes.json();
-            if (!llmResult.success) throw new Error(llmResult.error);
-
-            output = await pollTriggerTask(req, llmResult.runId);
-            break;
-          }
-
-          case 'cropImage': {
-            const imageInput = inputData.image_url as { images?: { imageUrl: string }[]; outputImageUrl?: string } | undefined;
-            const imageUrl = imageInput?.outputImageUrl || imageInput?.images?.[0]?.imageUrl;
-
-            const cropPayload = {
-              imageUrl: imageUrl || '',
-              x: (inputData.x_percent as { text?: string })?.text ?? node.data.x ?? 0,
-              y: (inputData.y_percent as { text?: string })?.text ?? node.data.y ?? 0,
-              width: (inputData.width_percent as { text?: string })?.text ?? node.data.width ?? 100,
-              height: (inputData.height_percent as { text?: string })?.text ?? node.data.height ?? 100,
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            nodeResults[nodeId] = {
+              ...nodeResults[nodeId],
+              status: 'failed',
+              error: errorMsg,
+              completedAt: new Date().toISOString(),
             };
-
-            const cropRes = await fetch(`${getBaseUrl(req)}/api/trigger`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ taskType: 'crop-image', payload: cropPayload }),
-            });
-
-            const cropResult = await cropRes.json();
-            if (!cropResult.success) throw new Error(cropResult.error);
-
-            output = await pollTriggerTask(req, cropResult.runId);
-            break;
+            failed = true;
           }
+        })
+      );
 
-          case 'extractFrame': {
-            const videoInput = inputData.video_url as { videoUrl?: string } | undefined;
-            const extractPayload = {
-              videoUrl: videoInput?.videoUrl || '',
-              timestamp: (inputData.timestamp as { text?: string })?.text ?? node.data.timestamp ?? 0,
-            };
-
-            const extractRes = await fetch(`${getBaseUrl(req)}/api/trigger`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ taskType: 'extract-frame', payload: extractPayload }),
-            });
-
-            const extractResult = await extractRes.json();
-            if (!extractResult.success) throw new Error(extractResult.error);
-
-            output = await pollTriggerTask(req, extractResult.runId);
-            break;
-          }
-
-          default:
-            output = { text: `Unknown node type: ${node.type}` };
-        }
-
-        nodeResults[nodeId] = {
-          ...nodeResults[nodeId],
-          status: 'completed',
-          output,
-          completedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        nodeResults[nodeId] = {
-          ...nodeResults[nodeId],
-          status: 'failed',
-          error: errorMsg,
-          completedAt: new Date().toISOString(),
-        };
-        failed = true;
-      }
+      void results; // consumed via nodeResults side-effect
     }
 
     // Update run record
